@@ -1,0 +1,21 @@
+{
+  "name": "knowloop",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @knowloop/web dev",
+    "build": "pnpm --filter @knowloop/web build",
+    "preview": "pnpm --filter @knowloop/web preview",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "verify:s1": "node scripts/verify-s1.mjs",
+    "fixture": "node scripts/gen-fixture.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.16.0"
+  }
+}
