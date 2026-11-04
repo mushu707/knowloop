@@ -8,7 +8,7 @@
 
 ## 状态：S1 完成（S0 文档已固化）
 
-S0 = 三份文档定稿。S1 = 能导入题库、在列表里看到、点开一道题——**已通过自动化验收**。
+S0 = 六份文档定稿（`PRD` / `DATA-CONTRACT` / `EVAL` 三份契约，加 `STACK` / `STRUCTURE` / `DECISIONS` 三份实现说明）。S1 = 能导入题库、在列表里看到、点开一道题——**已通过自动化验收**。
 
 ```bash
 pnpm install
@@ -46,6 +46,17 @@ S0 文档 ✅ → S1 壳与导入 ✅ → S2 刷题闭环 → S3 错题与调度
 ```
 
 每个切片的出口是"能点、能跑、手动验收"，不是"代码写完"。
+
+## 提交约定
+
+- **一个迭代一次提交**。commit 前 `pnpm typecheck` + `pnpm test` 必须全绿；
+  动了导入 / 列表 / 详情页时，额外跑 `node scripts/verify-s1.mjs`。
+- **格式**：Conventional Commits，`type(scope): 中文摘要`，
+  scope 只用 `web` / `core` / `docs` / `repo`。标题写"做了什么"，
+  正文 3–6 行写**为什么**和**验收方式**。
+- **唯一拆分的例外**：触及 `DATA-CONTRACT.md` 或 `Question` 形状的改动单独成一个 commit——
+  回滚功能时不能把契约一起带走。
+- 直推 `main`，每个 S 出口打 tag（`s1-done`、`s2-done`……）。
 
 ## 三条禁令
 
