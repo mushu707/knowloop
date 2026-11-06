@@ -211,7 +211,6 @@ export const ErrorTag = z.enum([
   'confusion',        // 概念混淆：知道但和另一个搞混了
   'misread',          // 审题失误：题看错了
   'forgotten',        // 记忆衰退：以前会，现在忘了
-  'lucky_guess',      // 蒙对：答案对但自评没把握
   'time_pressure',    // 时间压力：会但来不及
   'careless',         // 手滑
   'other',
@@ -226,9 +225,11 @@ export const GradeResult = z.object({
 });
 ```
 
-**为什么错因是受控词表而不是自由文本**：同一个错误换个说法就统计不到一起。八种足够，宁可粗也不要散。`lucky_guess` 单独存在是因为**蒙对会污染掌握度**——它必须依赖用户自评"这题我有没有把握"，UI 上答对后追问一次。
+**为什么错因是受控词表而不是自由文本**：同一个错误换个说法就统计不到一起。七种足够，宁可粗也不要散。
 
-**`correct` 与 `errorTags` 的约束**：`correct === true` 时，`errorTags` 只允许 `['lucky_guess']` 或空。
+**「蒙对」不在词表里**。它是答对时的状态，不是错因，由 `Attempt.selfConfidence === 1` 派生（见 `derive/isLuckyGuess`）。v1 初稿曾把 `lucky_guess` 放进 errorTags，S2 实现时发现这会造成"一份数据两个真相源"（用户可以自评没把握却没点按钮），已删除——见 §16 变更记录。
+
+**`correct` 与 `errorTags` 的约束**：`correct === true` 时 `errorTags` 必须为空。答错时可以为空（用户还没选错因）。
 
 ---
 
@@ -276,32 +277,31 @@ export interface MistakeView {
   questionId: string;
   wrongCount: number;      // 历史错误次数
   lastWrongAt: string;
-  resolved: boolean;       // 最近一次作答已正确
+  lastAnsweredAt: string;
+  resolved: boolean;       // 最近一次答对，且不是蒙的
   topErrorTags: ErrorTag[];
 }
 
-/** 错题本 = 按 questionId 折叠 attempts */
-export function deriveMistakes(attempts: Attempt[]): MistakeView[] {
-  const byQ = new Map<string, Attempt[]>();
-  for (const a of attempts) (byQ.get(a.questionId) ?? byQ.set(a.questionId, []).get(a.questionId)!).push(a);
+/** 蒙对：答对但自评"没底"。不存字段，从 selfConfidence 派生 */
+export function isLuckyGuess(a: Pick<Attempt, 'grade' | 'selfConfidence'>): boolean {
+  return a.grade.correct && a.selfConfidence === 1;
+}
 
-  const out: MistakeView[] = [];
-  for (const [questionId, list] of byQ) {
-    const sorted = [...list].sort((x, y) => x.answeredAt.localeCompare(y.answeredAt));
-    const wrong = sorted.filter((a) => !a.grade.correct);
-    if (wrong.length === 0) continue;
-    const last = sorted.at(-1)!;
-    out.push({
-      questionId,
-      wrongCount: wrong.length,
-      lastWrongAt: wrong.at(-1)!.answeredAt,
-      resolved: last.grade.correct,
-      topErrorTags: topN(wrong.flatMap((a) => a.grade.errorTags), 3),
-    });
-  }
-  return out;
+/** 错题本 = 按 questionId 折叠 attempts，按 answeredAt 升序看最后一次 */
+export function deriveMistakes(attempts: Attempt[]): MistakeView[] {
+  // ……按题分组 → 过滤出有错过的 → 取最后一次判定 resolved
+  resolved: last.grade.correct && !isLuckyGuess(last)
 }
 ```
+
+**`resolved` 的口径会演进，写在这里免得后人重造**：
+
+| 阶段 | 口径 | 理由 |
+|---|---|---|
+| S2（当前） | 最近一次答对，且不是蒙对 | 没有复习间隔时，"连续答对 2 次"可以在同一 session 连刷两遍作弊 |
+| S3（接 SM-2 后） | `reviewState.repetitions >= 2` | 那时"连续"才有真实的时间间隔支撑 |
+
+所以 `deriveMistakes` 里刻意没写死"连续 N 次"，将来只改这一个函数。
 
 **错题率的口径（写死，不许各页面自己算）**：
 
@@ -523,3 +523,19 @@ db.version(1).stores({
 4. 才允许 Agent 改 `schema/*.ts`。
 
 **没走完这四步就动 schema 的提交，直接回退。**
+
+---
+
+## 16. 变更记录
+
+### 2026-11-05 · S2 实现期间的修订
+
+| 变更 | 理由 | 影响已有数据？ |
+|---|---|---|
+| 删除 `ErrorTag.lucky_guess` | 它与 `Attempt.selfConfidence` 描述同一件事，会双写。用户可以"自评没把握"却没点按钮，产生自相矛盾的记录。改为由 `selfConfidence === 1` 派生（`isLuckyGuess`） | 否。当时 `attempts` 表为空 |
+| `GradeResultStrict`：答对时 `errorTags` 必须为空 | 原规则"答对只允许 lucky_guess"失去了意义 | 否 |
+| `MistakeView` 增加 `lastAnsweredAt` | 错题本排序需要"最近一次作答时间"，而不只是"最近一次答错时间" | 否 |
+| `resolved` 口径明确为「答对且非蒙对」 | 原定义 `last.grade.correct` 会让蒙对直接消错，错题本失去意义 | 否 |
+| 新增 `scheduler/sm2.ts` | S2 只写纯函数不接 UI，S3 的复习队列直接消费 | 否 |
+
+**为什么没有升 `SCHEMA_VERSION`**：版本号服务于「已经存在于用户库里的数据」的迁移。本表的字段形状没有变化（只删了一个枚举成员，且该成员从未被写入过任何记录），空表迁移没有意义。这是**唯一**被允许跳过升版的情况：改动发生时该字段零数据。以后再出现类似情况，必须在本文档留下同样的判断依据。

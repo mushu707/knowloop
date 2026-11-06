@@ -1,11 +1,16 @@
 import { z } from 'zod';
 
+/**
+ * 错因受控词表。七项，宁可粗也不要散——同一个错误换个说法就统计不到一起。
+ *
+ * 注意：「蒙对」不在这里。它是答对时的状态，不是错因，由 Attempt.selfConfidence === 1 派生。
+ * 塞进 errorTags 会造成"一份数据两个真相源"（见 docs/DECISIONS.md D5）。
+ */
 export const ErrorTag = z.enum([
   'concept_gap',
   'confusion',
   'misread',
   'forgotten',
-  'lucky_guess',
   'time_pressure',
   'careless',
   'other',
@@ -17,8 +22,7 @@ export const ERROR_TAG_LABEL: Record<ErrorTag, string> = {
   confusion: '概念混淆',
   misread: '审题失误',
   forgotten: '记忆衰退',
-  lucky_guess: '蒙对',
-  time_pressure: '时间压力',
+  time_pressure: '时间不够',
   careless: '手滑',
   other: '其他',
 };
@@ -31,10 +35,8 @@ export const GradeResult = z.object({
 });
 export type GradeResult = z.infer<typeof GradeResult>;
 
-/** correct 为真时只允许 lucky_guess，或不带错因 */
+/** 答对时不该带错因；答错时错因可以为空（用户还没选） */
 export const GradeResultStrict = GradeResult.superRefine((g, ctx) => {
-  if (g.correct && g.errorTags.some((t) => t !== 'lucky_guess'))
-    ctx.addIssue({ code: 'custom', message: '答对时只允许标记 lucky_guess', path: ['errorTags'] });
-  if (!g.correct && g.errorTags.includes('lucky_guess'))
-    ctx.addIssue({ code: 'custom', message: '答错时不能标记 lucky_guess', path: ['errorTags'] });
+  if (g.correct && g.errorTags.length > 0)
+    ctx.addIssue({ code: 'custom', message: '答对时不应该标记错因', path: ['errorTags'] });
 });

@@ -134,10 +134,19 @@ describe('GradeResultStrict', () => {
     expect(r.success).toBe(false);
   });
 
-  it('答对时允许标记蒙对', () => {
+  it('答对时不允许带任何错因（蒙对改由 selfConfidence 派生）', () => {
     const r = GradeResultStrict.safeParse({
       correct: true,
-      errorTags: ['lucky_guess'],
+      errorTags: ['confusion'],
+      gradedBy: 'core',
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('答对且无错因是合法的', () => {
+    const r = GradeResultStrict.safeParse({
+      correct: true,
+      errorTags: [],
       gradedBy: 'core',
     });
     expect(r.success).toBe(true);
