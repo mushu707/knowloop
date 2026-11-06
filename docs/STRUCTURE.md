@@ -24,13 +24,16 @@ knowloop/
 │           ├── pages/              一个文件 = 一个路由
 │           │   ├── BanksPage.tsx   题库列表（空状态也在这）
 │           │   ├── BankPage.tsx    某题库的题目列表
-│           │   ├── QuestionPage.tsx 题目详情
+│           │   ├── QuestionPage.tsx 题目详情（查看模式）
+│           │   ├── PracticePage.tsx ★ 刷题：作答 / 判分 / 标错因 / 下一题
+│           │   ├── MistakesPage.tsx 错题本（从 attempts 派生）
 │           │   └── ImportPage.tsx  导入 + 导入报告
 │           ├── components/
 │           │   └── Markdown.tsx    题干/解析渲染（唯一能渲染用户内容的地方）
 │           ├── db/
 │           │   ├── index.ts        ★ Dexie 实例 + 表结构声明
-│           │   └── repo.ts         ★ 唯一写库入口（导入、知识树索引）
+│           │   ├── repo.ts         ★ 写库入口之一：导入题库
+│           │   └── attempts.ts     ★ 写库入口之二：作答记录 + 推进 SM-2
 │           └── lib/
 │               └── labels.ts       纯函数：题型中文名、题干摘要、日期格式
 │
@@ -51,10 +54,17 @@ knowloop/
 │           │   ├── rag.ts          文档 / 分块 / 向量 / 生成任务
 │           │   ├── provider.ts     BYO 模型配置 + ModelProvider 接口
 │           │   └── plugin.ts       插件 manifest（v0.2 插槽，已定形状）
+│           ├── grade/
+│           │   └── judge.ts        ★ 判分：Question + Response → GradeResult
+│           ├── derive/
+│           │   └── mistake.ts      ★ 错题派生：attempts → MistakeView（无表）
+│           ├── scheduler/
+│           │   └── sm2.ts          SM-2 纯函数（S3 接 UI）
 │           ├── lint/
 │           │   └── question.ts     质量提示（≠ 结构校验）
 │           └── __tests__/
-│               └── contract.test.ts  15 条契约测试
+│               ├── contract.test.ts  16 条契约测试
+│               └── practice.test.ts  20 条判分 / 派生 / 调度测试
 │
 ├── fixtures/                       ← 测试夹具，不是产品内容
 │   ├── questions.seed.json         20 道示例题（生成物）
@@ -95,13 +105,13 @@ core 是**纯领域层**：类型、校验、哈希、将来的 SM-2 调度和�
 
 **为什么这么做**：S4 的 RAG 管线要和 UI 解耦，S3 的错题派生要能被单测。一旦 core 里混进 React，这些都不可能。
 
-### 规则二：只有 `db/repo.ts` 可以写库
+### 规则二：只有 `db/repo.ts` 与 `db/attempts.ts` 可以写库
 
 页面**读**库可以直接 `db.questions.get()`（读是安全的），但**写**必须走 repo。
 
 原因：写入伴随一整套规则——重算内容 id、去重、事务、知识树完整性。散落在页面里写，三个月后你会有一个"为什么导入后 id 对不上"的悬案。
 
-**判断标准**：`db.xxx.put / add / bulkPut / delete` 只应该出现在 `repo.ts` 里（S2 的作答记录会新增 `db/attempts.ts`，同样遵守这条）。
+**判断标准**：`db.xxx.put / add / bulkPut / delete` 只应该出现在 `repo.ts`（导入题库）和 `attempts.ts`（作答记录 + 推进 SM-2）里。新增第三个入口前，先问是不是能并进这两个。
 
 ### 规则三：`Markdown.tsx` 是唯一渲染外部文本的地方
 
@@ -157,6 +167,10 @@ plainStem() 取第一行散文做列表摘要      ← 跳过代码块，代码�
 | `packages/core/src/schema/grade.ts` | 错因词表。加错因要考虑统计口径 | 低 |
 | `apps/web/src/db/index.ts` | 表与索引。加表要同步改契约 §12 | 中（S2 起） |
 | `apps/web/src/db/repo.ts` | 导入规则 | 中 |
+| `apps/web/src/db/attempts.ts` | 作答落库 + 推进 SM-2（同一事务） | 低 |
+| `packages/core/src/grade/judge.ts` | 判分（二值，集合相等） | 低 |
+| `packages/core/src/derive/mistake.ts` | 错题派生，`resolved` 口径的唯一出处 | 低 |
+| `apps/web/src/pages/PracticePage.tsx` | 刷题全部交互 | 高 |
 | `apps/web/src/pages/ImportPage.tsx` | 导入交互 + 报告呈现 | 中 |
 | `apps/web/src/lib/labels.ts` | 纯展示函数 | 高（UI 迭代就改它） |
 | `apps/web/src/styles.css` | 全部样式 | 高 |
@@ -189,32 +203,40 @@ plainStem() 取第一行散文做列表摘要      ← 跳过代码块，代码�
 
 ---
 
-## 7. 扩展点：S2 / S4 会往哪加文件
+## 7. 扩展点：S3 / S4 会往哪加文件
 
-**S2（刷题闭环）**
+**S3（错题驱动的组卷与复习队列）** —— 全部在 core 里加，UI 只换数据来源：
 
 ```
 packages/core/src/
-  ├── derive/mistake.ts        deriveMistakes()：attempts → 错题视图（纯函数）
-  ├── scheduler/sm2.ts         SM-2 纯函数，S3 用
-  └── grade/judge.ts           判分：Question + Response → GradeResult
+  ├── derive/stats.ts        kpWrongRate / 薄弱知识点排序（口径见契约 §7）
+  └── derive/queue.ts        今日复习队列：reviewStates.dueAt <= now
 
-apps/web/src/
-  ├── db/attempts.ts           唯一的作答写入入口（遵守规则二）
-  └── pages/PracticePage.tsx   刷题界面
+apps/web/src/pages/
+  └── ReviewPage.tsx         复习模式（复用 PracticePage 的交互骨架）
 ```
+
+`sm2.ts` 已经在 S2 写好并接进了 `recordAttempt`，S3 只需要读 `reviewStates`。
 
 **S4（文档导入 + RAG）**
 
 ```
 packages/core/src/rag/
-  ├── chunk.ts                 段落感知分块
-  ├── embed.ts                 Transformers.js 封装（唯一的重依赖）
-  ├── retrieve.ts              暴力余弦 + topK
-  └── generate.ts              出题 prompt + Zod 校验 + 重试
+  ├── chunk.ts               段落感知分块
+  ├── embed.ts               Transformers.js 封装（唯一的重依赖）
+  ├── retrieve.ts            暴力余弦 + topK
+  └── generate.ts            出题 prompt + Zod 校验 + 重试
 
 apps/web/src/pages/
-  └── PastePage.tsx            粘贴正文 → 出题（D12 的"第一等输入"）
+  └── PastePage.tsx          粘贴正文 → 出题（D12 的"第一等输入"）
 ```
 
 新增依赖都放 `packages/core`，因为它们是纯逻辑、需要单测；UI 只负责调用。
+
+---
+
+## 8. S2 新增内容的边界说明
+
+S2 加了两个**写库入口**，规则二（只有 repo 能写库）因此修订为：**写库只允许出现在 `db/repo.ts` 和 `db/attempts.ts`**。新增第三个入口前，先问自己是不是可以并进这两个。
+
+`PracticePage` 承担了比一般页面更多的职责（队列、作答、判分展示、错因选择、会话统计）。**这是有意的**——把它拆成五个 hook 会在还没有第二个消费方时产生抽象债。S3 的 ReviewPage 复用同一套交互时，才是抽取 `useQuizSession()` 的正确时机。

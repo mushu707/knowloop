@@ -6,17 +6,20 @@
 
 ---
 
-## 状态：S1 完成（S0 文档已固化）
-
-S0 = 六份文档定稿（`PRD` / `DATA-CONTRACT` / `EVAL` 三份契约，加 `STACK` / `STRUCTURE` / `DECISIONS` 三份实现说明）。S1 = 能导入题库、在列表里看到、点开一道题——**已通过自动化验收**。
+## 状态：S2 完成（刷题闭环跑通）
 
 ```bash
 pnpm install
 pnpm fixture        # 生成 fixtures/questions.seed.json（20 道示例题）
 pnpm dev            # http://localhost:5173
-pnpm test           # 契约单测（15 条）
-node scripts/verify-s1.mjs   # 无头浏览器跑一遍 S1 验收（需先 pnpm dev）
+pnpm test           # 契约与判分单测（36 条）
+pnpm verify:s1      # 无头浏览器跑 S1 验收（需先 pnpm dev）
+pnpm verify:s2      # 无头浏览器跑 S2 验收：答完一轮 + 错题本 + 蒙对不消错
 ```
+
+**已能做的事**：导入题库 → 随机开练 → 即时判分 → 标错因 → 错题本自动出现 → 答对（且不是蒙的）才消错 → 刷新不丢。
+
+**还不能做**：按知识点 / 薄弱项组卷（S3）、文档导入与 RAG 出题（S4）、离线与安装（S6）。
 
 ## 文档
 
@@ -27,7 +30,7 @@ node scripts/verify-s1.mjs   # 无头浏览器跑一遍 S1 验收（需先 pnpm 
 | [`docs/PRD.md`](docs/PRD.md) | 范围契约：做什么、不做什么、怎么算做完 | 每次想加功能之前 |
 | [`docs/DATA-CONTRACT.md`](docs/DATA-CONTRACT.md) | 数据模型 + Zod schema + 不变量 | 写任何一行涉及数据的代码之前 |
 | [`docs/EVAL.md`](docs/EVAL.md) | RAG 质量怎么量化 | S5 之前，以及每次改 prompt 之后 |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | 10 条关键决策 + 各自的推翻条件 | 想推翻某个决定时 |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | 13 条关键决策 + 各自的推翻条件 | 想推翻某个决定时 |
 | [`docs/research/`](docs/research/) | 立项期的调研原文（DeepSeek 对话存档） | 想知道某条结论从哪来的 |
 
 ## 技术栈（一句话版）
@@ -41,7 +44,7 @@ Vite + React + TypeScript · Dexie(IndexedDB) · Zod · Transformers.js(bge-smal
 ## 节拍
 
 ```
-S0 文档 ✅ → S1 壳与导入 ✅ → S2 刷题闭环 → S3 错题与调度
+S0 文档 ✅ → S1 壳与导入 ✅ → S2 刷题闭环 ✅ → S3 错题与调度
        → S4 文档导入 + RAG → S5 评估 → S6 PWA → S7 dogfood 2 周
 ```
 
@@ -49,13 +52,14 @@ S0 文档 ✅ → S1 壳与导入 ✅ → S2 刷题闭环 → S3 错题与调度
 
 ## 提交约定
 
-- **一个迭代一次提交**。commit 前 `pnpm typecheck` + `pnpm test` 必须全绿；
-  动了导入 / 列表 / 详情页时，额外跑 `node scripts/verify-s1.mjs`。
+- **一次迭代收敛到一个目标**，落库按层拆：契约（`DATA-CONTRACT.md` / `DECISIONS.md` / `schema/*.ts`）、
+  core 逻辑（纯函数 + 单测）、表现层（`apps/web` + 验收脚本 + README）各成一个 commit。
+  三层都能独立通过门禁，二分定位才是干净的；同一层的文档跟着该层走。
+- 每个 commit 前 `pnpm typecheck` + `pnpm test` 必须全绿；动了哪个切片就跑哪个验收：
+  S1（导入 / 列表 / 详情）→ `pnpm verify:s1`，S2（练习 / 错题本）→ `pnpm verify:s2`。
 - **格式**：Conventional Commits，`type(scope): 中文摘要`，
   scope 只用 `web` / `core` / `docs` / `repo`。标题写"做了什么"，
   正文 3–6 行写**为什么**和**验收方式**。
-- **唯一拆分的例外**：触及 `DATA-CONTRACT.md` 或 `Question` 形状的改动单独成一个 commit——
-  回滚功能时不能把契约一起带走。
 - 直推 `main`，每个 S 出口打 tag（`s1-done`、`s2-done`……）。
 
 ## 三条禁令

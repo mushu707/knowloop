@@ -51,6 +51,15 @@ export function BankPage() {
       </div>
       {bank.description ? <p className="lede">{bank.description}</p> : null}
 
+      <div className="row-actions">
+        <Link className="btn btn-primary" to={`/practice/${bank.id}`}>
+          开始练习（随机 {ordered.length} 题）
+        </Link>
+        <Link className="btn" to={`/bank/${bank.id}/mistakes`}>
+          错题本
+        </Link>
+      </div>
+
       <ol className="question-list">
         {ordered.map((q, i) => (
           <li key={q.id}>

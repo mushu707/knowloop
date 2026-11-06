@@ -3,6 +3,8 @@ import { BanksPage } from './pages/BanksPage';
 import { BankPage } from './pages/BankPage';
 import { QuestionPage } from './pages/QuestionPage';
 import { ImportPage } from './pages/ImportPage';
+import { PracticePage } from './pages/PracticePage';
+import { MistakesPage } from './pages/MistakesPage';
 
 function NotFound() {
   const { '*': rest } = useParams();
@@ -37,13 +39,15 @@ function Shell() {
           <Route path="/" element={<BanksPage />} />
           <Route path="/import" element={<ImportPage />} />
           <Route path="/bank/:bankId" element={<BankPage />} />
+          <Route path="/bank/:bankId/mistakes" element={<MistakesPage />} />
+          <Route path="/practice/:bankId" element={<PracticePage />} />
           <Route path="/q/:questionId" element={<QuestionPage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
       <footer className="footer">
         <span>数据全部保存在这台设备的浏览器里，没有账号，没有上传。</span>
-        <span className="mono">v0.1 · S1</span>
+        <span className="mono">v0.1 · S2</span>
       </footer>
     </div>
   );

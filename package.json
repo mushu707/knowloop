@@ -13,6 +13,7 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "verify:s1": "node scripts/verify-s1.mjs",
+    "verify:s2": "node scripts/verify-s2.mjs",
     "fixture": "node scripts/gen-fixture.mjs"
   },
   "devDependencies": {
