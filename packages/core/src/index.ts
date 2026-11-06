@@ -23,3 +23,12 @@ export type { QuestionContent } from './canonical';
 
 export { lintQuestion } from './lint/question';
 export type { LintNotice } from './lint/question';
+
+export { judgeAnswer, isAnswerCorrect, JudgeError } from './grade/judge';
+export type { JudgeInput } from './grade/judge';
+
+export { deriveMistakes, isLuckyGuess } from './derive/mistake';
+export type { MistakeView } from './derive/mistake';
+
+export { nextReviewState, qualityOf } from './scheduler/sm2';
+export type { Quality, NextReviewInput } from './scheduler/sm2';
