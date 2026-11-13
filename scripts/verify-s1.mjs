@@ -6,15 +6,10 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
+import { findChrome } from './_chrome.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BASE = process.argv[2] ?? 'http://localhost:5173';
-
-const CHROME_CANDIDATES = [
-  'C:/Users/Administrator/AppData/Local/ms-playwright/chromium-1179/chrome-win/chrome.exe',
-  '/usr/bin/chromium',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-];
 
 const seed = JSON.parse(readFileSync(resolve(ROOT, 'fixtures/questions.seed.json'), 'utf8'));
 const first = seed.questions[0];
@@ -25,14 +20,7 @@ const ok = (name, detail = '') => steps.push({ pass: true, name, detail });
 const fail = (name, detail = '') => steps.push({ pass: false, name, detail });
 
 const browser = await puppeteer.launch({
-  executablePath: CHROME_CANDIDATES.find((p) => {
-    try {
-      readFileSync(p);
-      return true;
-    } catch {
-      return false;
-    }
-  }),
+  executablePath: findChrome(),
   headless: true,
   args: ['--no-sandbox', '--disable-gpu'],
 });

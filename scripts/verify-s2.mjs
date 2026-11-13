@@ -6,15 +6,10 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
+import { findChrome } from './_chrome.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BASE = process.argv[2] ?? 'http://localhost:5173';
-
-const CHROME_CANDIDATES = [
-  'C:/Users/Administrator/AppData/Local/ms-playwright/chromium-1179/chrome-win/chrome.exe',
-  '/usr/bin/chromium',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-];
 
 const seed = JSON.parse(readFileSync(resolve(ROOT, 'fixtures/questions.seed.json'), 'utf8'));
 const byId = new Map(seed.questions.map((q) => [q.id, q]));
@@ -25,14 +20,7 @@ const fail = (name, detail = '') => steps.push({ pass: false, name, detail });
 const check = (cond, name, detail = '') => (cond ? ok(name, detail) : fail(name, detail));
 
 const browser = await puppeteer.launch({
-  executablePath: CHROME_CANDIDATES.find((p) => {
-    try {
-      readFileSync(p);
-      return true;
-    } catch {
-      return false;
-    }
-  }),
+  executablePath: findChrome(),
   headless: true,
   args: ['--no-sandbox', '--disable-gpu'],
 });
@@ -218,10 +206,19 @@ try {
   await page.goto(`${BASE}/#/bank/${bankId}/mistakes`, { waitUntil: 'networkidle2' });
   await page.waitForSelector('.mistake-row', { timeout: 10000 });
   const counts2 = await mistakeCounts();
+  const hintAfterLucky = await page.evaluate(() => ({
+    needOne: [...document.querySelectorAll('.mistake-meta')].filter((n) => (n.textContent ?? '').includes('再隔天答对 1 次')).length,
+    needTwo: [...document.querySelectorAll('.mistake-meta')].filter((n) => (n.textContent ?? '').includes('再隔天答对 2 次')).length,
+  }));
   check(
     counts2?.open === total && counts2?.resolved === 0,
     '答对但标记「蒙的」→ 仍然未消错',
     JSON.stringify(counts2),
+  );
+  check(
+    hintAfterLucky.needOne === 0 && hintAfterLucky.needTwo === total,
+    '蒙对既不推进消错进度，也打断连击',
+    JSON.stringify(hintAfterLucky),
   );
 
   // 5. 正常答对 → 消错
@@ -234,10 +231,14 @@ try {
   await page.goto(`${BASE}/#/bank/${bankId}/mistakes`, { waitUntil: 'networkidle2' });
   await page.waitForSelector('.mistake-row', { timeout: 10000 });
   const counts3 = await mistakeCounts();
+  const hintAfterSolid = await page.evaluate(() => ({
+    needOne: [...document.querySelectorAll('.mistake-meta')].filter((n) => (n.textContent ?? '').includes('再隔天答对 1 次')).length,
+    needTwo: [...document.querySelectorAll('.mistake-meta')].filter((n) => (n.textContent ?? '').includes('再隔天答对 2 次')).length,
+  }));
   check(
-    counts3?.open === total - 1 && counts3?.resolved === 1,
-    '有把握地答对 → 消错',
-    JSON.stringify(counts3),
+    counts3?.open === total && counts3?.resolved === 0 && hintAfterSolid.needOne === 1 && hintAfterSolid.needTwo === total - 1,
+    '有把握地答对一次只推进一格（S3 起要求隔天再对一次）',
+    JSON.stringify({ ...counts3, ...hintAfterSolid }),
   );
 
   await page.screenshot({ path: resolve(ROOT, 'docs/research/s2-mistakes.png'), fullPage: true });

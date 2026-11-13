@@ -6,20 +6,21 @@
 
 ---
 
-## 状态：S2 完成（刷题闭环跑通）
+## 状态：S3 完成（错题驱动的诊断与复习）
 
 ```bash
 pnpm install
 pnpm fixture        # 生成 fixtures/questions.seed.json（20 道示例题）
 pnpm dev            # http://localhost:5173
-pnpm test           # 契约与判分单测（36 条）
+pnpm test           # 契约 / 判分 / 统计单测（53 条）
 pnpm verify:s1      # 无头浏览器跑 S1 验收（需先 pnpm dev）
 pnpm verify:s2      # 无头浏览器跑 S2 验收：答完一轮 + 错题本 + 蒙对不消错
+pnpm verify:s3      # 无头浏览器跑 S3 验收：薄弱排序 + 今日队列 + 隔天消错
 ```
 
-**已能做的事**：导入题库 → 随机开练 → 即时判分 → 标错因 → 错题本自动出现 → 答对（且不是蒙的）才消错 → 刷新不丢。
+**已能做的事**：导入题库 → 随机开练 → 即时判分 → 标错因 → 错题本自动出现 → **诊断页看薄弱知识点** → **今日复习队列（到期 + 新题配额）** → 隔天再答对一次才消错。
 
-**还不能做**：按知识点 / 薄弱项组卷（S3）、文档导入与 RAG 出题（S4）、离线与安装（S6）。
+**还不能做**：文档导入与 RAG 出题（S4）、按知识点单独组卷（S4 之后）、离线与安装（S6）。
 
 ## 文档
 
@@ -30,7 +31,7 @@ pnpm verify:s2      # 无头浏览器跑 S2 验收：答完一轮 + 错题本 + 
 | [`docs/PRD.md`](docs/PRD.md) | 范围契约：做什么、不做什么、怎么算做完 | 每次想加功能之前 |
 | [`docs/DATA-CONTRACT.md`](docs/DATA-CONTRACT.md) | 数据模型 + Zod schema + 不变量 | 写任何一行涉及数据的代码之前 |
 | [`docs/EVAL.md`](docs/EVAL.md) | RAG 质量怎么量化 | S5 之前，以及每次改 prompt 之后 |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | 13 条关键决策 + 各自的推翻条件 | 想推翻某个决定时 |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | 15 条关键决策 + 各自的推翻条件 | 想推翻某个决定时 |
 | [`docs/research/`](docs/research/) | 立项期的调研原文（DeepSeek 对话存档） | 想知道某条结论从哪来的 |
 
 ## 技术栈（一句话版）
@@ -44,7 +45,7 @@ Vite + React + TypeScript · Dexie(IndexedDB) · Zod · Transformers.js(bge-smal
 ## 节拍
 
 ```
-S0 文档 ✅ → S1 壳与导入 ✅ → S2 刷题闭环 ✅ → S3 错题与调度
+S0 文档 ✅ → S1 壳与导入 ✅ → S2 刷题闭环 ✅ → S3 诊断与复习 ✅
        → S4 文档导入 + RAG → S5 评估 → S6 PWA → S7 dogfood 2 周
 ```
 
@@ -56,7 +57,8 @@ S0 文档 ✅ → S1 壳与导入 ✅ → S2 刷题闭环 ✅ → S3 错题与�
   core 逻辑（纯函数 + 单测）、表现层（`apps/web` + 验收脚本 + README）各成一个 commit。
   三层都能独立通过门禁，二分定位才是干净的；同一层的文档跟着该层走。
 - 每个 commit 前 `pnpm typecheck` + `pnpm test` 必须全绿；动了哪个切片就跑哪个验收：
-  S1（导入 / 列表 / 详情）→ `pnpm verify:s1`，S2（练习 / 错题本）→ `pnpm verify:s2`。
+  S1（导入 / 列表 / 详情）→ `pnpm verify:s1`，S2（练习 / 错题本）→ `pnpm verify:s2`，
+  S3（诊断 / 复习 / 消错）→ `pnpm verify:s3`。改动越靠底层，越要跑全部三个。
 - **格式**：Conventional Commits，`type(scope): 中文摘要`，
   scope 只用 `web` / `core` / `docs` / `repo`。标题写"做了什么"，
   正文 3–6 行写**为什么**和**验收方式**。

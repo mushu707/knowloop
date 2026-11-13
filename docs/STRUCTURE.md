@@ -26,6 +26,8 @@ knowloop/
 │           │   ├── BankPage.tsx    某题库的题目列表
 │           │   ├── QuestionPage.tsx 题目详情（查看模式）
 │           │   ├── PracticePage.tsx ★ 刷题：作答 / 判分 / 标错因 / 下一题
+│           │   │                     同一个组件承担 mode=review（今日队列）
+│           │   ├── ProgressPage.tsx 诊断：薄弱排序 + 知识点全景
 │           │   ├── MistakesPage.tsx 错题本（从 attempts 派生）
 │           │   └── ImportPage.tsx  导入 + 导入报告
 │           ├── components/
@@ -57,14 +59,17 @@ knowloop/
 │           ├── grade/
 │           │   └── judge.ts        ★ 判分：Question + Response → GradeResult
 │           ├── derive/
-│           │   └── mistake.ts      ★ 错题派生：attempts → MistakeView（无表）
+│           │   ├── mistake.ts      ★ 错题派生 + 消错口径（无表）
+│           │   ├── stats.ts        ★ 知识点错误率 / 平滑排序 / 父节点累加
+│           │   └── queue.ts        ★ 今日队列：到期 + 新题配额 + 上限
 │           ├── scheduler/
 │           │   └── sm2.ts          SM-2 纯函数（S3 接 UI）
 │           ├── lint/
 │           │   └── question.ts     质量提示（≠ 结构校验）
 │           └── __tests__/
 │               ├── contract.test.ts  16 条契约测试
-│               └── practice.test.ts  20 条判分 / 派生 / 调度测试
+│               ├── practice.test.ts  23 条判分 / 派生 / 调度测试
+│               └── s3.test.ts        14 条统计 / 队列测试
 │
 ├── fixtures/                       ← 测试夹具，不是产品内容
 │   ├── questions.seed.json         20 道示例题（生成物）
@@ -170,7 +175,10 @@ plainStem() 取第一行散文做列表摘要      ← 跳过代码块，代码�
 | `apps/web/src/db/attempts.ts` | 作答落库 + 推进 SM-2（同一事务） | 低 |
 | `packages/core/src/grade/judge.ts` | 判分（二值，集合相等） | 低 |
 | `packages/core/src/derive/mistake.ts` | 错题派生，`resolved` 口径的唯一出处 | 低 |
-| `apps/web/src/pages/PracticePage.tsx` | 刷题全部交互 | 高 |
+| `apps/web/src/pages/PracticePage.tsx` | 刷题全部交互 + 复习模式 | 高 |
+| `packages/core/src/derive/stats.ts` | 错误率与薄弱排序，**口径的唯一出处** | 低 |
+| `packages/core/src/derive/queue.ts` | 今日队列规则 | 低 |
+| `apps/web/src/pages/ProgressPage.tsx` | 诊断页展示 | 中 |
 | `apps/web/src/pages/ImportPage.tsx` | 导入交互 + 报告呈现 | 中 |
 | `apps/web/src/lib/labels.ts` | 纯展示函数 | 高（UI 迭代就改它） |
 | `apps/web/src/styles.css` | 全部样式 | 高 |
@@ -203,20 +211,7 @@ plainStem() 取第一行散文做列表摘要      ← 跳过代码块，代码�
 
 ---
 
-## 7. 扩展点：S3 / S4 会往哪加文件
-
-**S3（错题驱动的组卷与复习队列）** —— 全部在 core 里加，UI 只换数据来源：
-
-```
-packages/core/src/
-  ├── derive/stats.ts        kpWrongRate / 薄弱知识点排序（口径见契约 §7）
-  └── derive/queue.ts        今日复习队列：reviewStates.dueAt <= now
-
-apps/web/src/pages/
-  └── ReviewPage.tsx         复习模式（复用 PracticePage 的交互骨架）
-```
-
-`sm2.ts` 已经在 S2 写好并接进了 `recordAttempt`，S3 只需要读 `reviewStates`。
+## 7. 扩展点：S4 起会往哪加文件
 
 **S4（文档导入 + RAG）**
 
@@ -235,8 +230,10 @@ apps/web/src/pages/
 
 ---
 
-## 8. S2 新增内容的边界说明
+## 8. 迭代留下的边界说明
 
-S2 加了两个**写库入口**，规则二（只有 repo 能写库）因此修订为：**写库只允许出现在 `db/repo.ts` 和 `db/attempts.ts`**。新增第三个入口前，先问自己是不是可以并进这两个。
+**写库入口有两个**：`db/repo.ts`（导入题库）、`db/attempts.ts`（作答记录 + 推进 SM-2）。新增第三个前，先问是不是能并进这两个。
 
-`PracticePage` 承担了比一般页面更多的职责（队列、作答、判分展示、错因选择、会话统计）。**这是有意的**——把它拆成五个 hook 会在还没有第二个消费方时产生抽象债。S3 的 ReviewPage 复用同一套交互时，才是抽取 `useQuizSession()` 的正确时机。
+**`PracticePage` 没有抽成 `useQuizSession()` hook。** S3 出现第二个消费方（复习模式）时，两个消费方的差异只有"队列从哪来"，用一个 `mode` prop 就够了。抽 hook 要把 5 个 state 全搬出去，换不来任何复用。等第三个消费方出现再说。
+
+**`PracticePage` 的队列以 `signature = 题库|单题|模式` 为身份。** 不能用一次性 boolean ref 挡 StrictMode 双执行——那样在 `/review` → `/practice?only=x` 之间切换时组件被复用、队列却还是上一轮。这是 S3 验收时才暴露的真 bug。

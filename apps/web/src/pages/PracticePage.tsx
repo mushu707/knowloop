@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ERROR_TAG_LABEL, isAnswerCorrect } from '@knowloop/core';
+import { ERROR_TAG_LABEL, buildTodayQueue, isAnswerCorrect } from '@knowloop/core';
 import type { AnswerResponse, ErrorTag, Question } from '@knowloop/core';
 import { db } from '../db';
 import { newSessionId, recordAttempt } from '../db/attempts';
@@ -31,7 +31,7 @@ const TAG_ORDER: ErrorTag[] = [
   'other',
 ];
 
-export function PracticePage() {
+export function PracticePage({ mode = 'practice' }: { mode?: 'practice' | 'review' }) {
   const { bankId } = useParams();
   const [search] = useSearchParams();
   const onlyId = search.get('only');
@@ -47,23 +47,65 @@ export function PracticePage() {
   const [results, setResults] = useState<{ correct: boolean }[]>([]);
   const [finished, setFinished] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [reviewMeta, setReviewMeta] = useState<{ reviewCount: number; newCount: number; truncated: boolean } | null>(
+    null,
+  );
 
   const sessionId = useRef(newSessionId());
   const startedAt = useRef(new Date().toISOString());
-  const booted = useRef(false);
 
-  // 队列只在进页面时构建一次；StrictMode 双执行会用 ref 挡掉第二次
+  // 队列的身份：题库 + 单题 + 模式。任一变化都意味着「这是一次新的练习」。
+  // 不能用一次性的 boolean ref 挡 StrictMode —— 那样在 /review → /practice?only=x
+  // 之间切换时，组件被复用、队列却还是上一轮的（S3 验收抓到的真 bug）。
+  const signature = `${bankId ?? ''}|${onlyId ?? ''}|${mode}`;
+  const loadedFor = useRef<string | null>(null);
+
   useEffect(() => {
-    if (booted.current) return;
-    booted.current = true;
+    if (loadedFor.current === signature) return;
+    loadedFor.current = signature;
+
+    setQueue(null);
+    setIndex(0);
+    setPicked([]);
+    setBoolPicked(null);
+    setPhase('answering');
+    setVerdict(null);
+    setErrorTags([]);
+    setSelfConfidence(undefined);
+    setResults([]);
+    setFinished(false);
+    setReviewMeta(null);
+    sessionId.current = newSessionId();
+    startedAt.current = new Date().toISOString();
+
     void (async () => {
       if (!bankId) return;
       const all = await db.questions.where('bankId').equals(bankId).toArray();
-      const selected = onlyId ? all.filter((q) => q.id === onlyId) : shuffle(all);
-      setQueue(selected);
-      startedAt.current = new Date().toISOString();
+
+      if (onlyId) {
+        setQueue(all.filter((q) => q.id === onlyId));
+      } else if (mode === 'review') {
+        // 队列口径见 core/derive/queue.ts：到期复习优先，剩余名额补新题，有每日上限
+        const states = await db.reviewStates.where('bankId').equals(bankId).toArray();
+        const today = buildTodayQueue({ questions: all, reviewStates: states, now: new Date() });
+        const byId = new Map(all.map((q) => [q.id, q]));
+        setQueue(
+          today.items.flatMap((item) => {
+            const q = byId.get(item.questionId);
+            return q ? [q] : [];
+          }),
+        );
+        setReviewMeta({
+          reviewCount: today.reviewCount,
+          newCount: today.newCount,
+          truncated: today.truncated,
+        });
+      } else {
+        setQueue(shuffle(all));
+      }
+
     })();
-  }, [bankId, onlyId]);
+  }, [signature, bankId, onlyId, mode]);
 
   const question = queue?.[index];
 
@@ -101,7 +143,7 @@ export function PracticePage() {
       await recordAttempt({
         question,
         response,
-        mode: 'practice',
+        mode,
         sessionId: sessionId.current,
         startedAt: startedAt.current,
         ...(selfConfidence ? { selfConfidence } : {}),
@@ -167,7 +209,10 @@ export function PracticePage() {
   if (queue.length === 0)
     return (
       <div className="empty">
-        <h1>这个题库里没有可练的题</h1>
+        <h1>{mode === 'review' ? '今天没有要复习的题' : '这个题库里没有可练的题'}</h1>
+        <p className="muted">
+          {mode === 'review' ? '所有做过的题都还没到复习时间，明天再来。' : '先去导入题库。'}
+        </p>
         <Link className="btn" to={`/bank/${bankId}`}>
           回题库
         </Link>
@@ -196,7 +241,11 @@ export function PracticePage() {
           </li>
         </ul>
         <div className="row-actions">
-          <Link className="btn btn-primary" to={`/practice/${bankId}`} reloadDocument>
+          <Link
+            className="btn btn-primary"
+            to={mode === 'review' ? `/review/${bankId}` : `/practice/${bankId}`}
+            reloadDocument
+          >
             再练一轮
           </Link>
           <Link className="btn" to={`/bank/${bankId}/mistakes`}>
@@ -233,6 +282,12 @@ export function PracticePage() {
         <Link className="muted" to={`/bank/${bankId}`}>
           ← 退出
         </Link>
+        {reviewMeta ? (
+          <span className="muted">
+            复习 {reviewMeta.reviewCount} · 新题 {reviewMeta.newCount}
+            {reviewMeta.truncated ? '（还有题排到明天）' : ''}
+          </span>
+        ) : null}
         <span className="mono muted">
           {index + 1} / {total}
         </span>

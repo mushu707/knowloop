@@ -6,3 +6,7 @@ dist/
 *.log
 apps/web/public/seed.json
 .idea/
+
+# verify-*.mjs 每次运行都会重拍，字节不可复现（画面里有相对时间）。
+# 没有任何文档引用它们，所以只留在本地，不入库。
+docs/research/*.png

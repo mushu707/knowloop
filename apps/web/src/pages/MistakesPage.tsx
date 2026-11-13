@@ -43,8 +43,8 @@ export function MistakesPage() {
       </div>
 
       <p className="lede">
-        错题不单独存表，而是从作答记录实时推导（{attempts.length} 条记录）。答对一次不算消错——
-        <strong>蒙对不算</strong>。
+        错题不单独存表，而是从作答记录实时推导（{attempts.length} 条记录）。消错的条件是
+        <strong>隔天再答对一次</strong>——当场答对不算，蒙对更不算。
       </p>
 
       {resolved.length > 0 ? (
@@ -80,7 +80,13 @@ export function MistakesPage() {
                       {question ? TYPE_LABEL[question.type] : '未知'}
                     </span>
                     <span className="muted mono">错 {view.wrongCount} 次</span>
-                    {view.resolved ? <span className="badge badge-ok">已消错</span> : null}
+                    {view.resolved ? (
+                      <span className="badge badge-ok">已消错</span>
+                    ) : (
+                      <span className="muted">
+                        再隔天答对 {view.remainingToResolve} 次就消
+                      </span>
+                    )}
                   </div>
                   <div className="mistake-stem">{question ? plainStem(question.stem, 96) : view.questionId}</div>
                   {view.topErrorTags.length > 0 ? (

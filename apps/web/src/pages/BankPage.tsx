@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useParams } from 'react-router-dom';
+import { computeKpStats, formatRate, rankWeakKps } from '@knowloop/core';
 import type { Question } from '@knowloop/core';
 import { db } from '../db';
 import { loadKpIndex } from '../db/repo';
@@ -13,6 +15,19 @@ export function BankPage() {
     [bankId],
   );
   const kpIndex = useLiveQuery(() => (bankId ? loadKpIndex(bankId) : undefined), [bankId]);
+  const attempts = useLiveQuery(
+    () => (bankId ? db.attempts.where('bankId').equals(bankId).toArray() : []),
+    [bankId],
+  );
+  const kpNodes = useLiveQuery(
+    () => (bankId ? db.kpNodes.where('bankId').equals(bankId).toArray() : []),
+    [bankId],
+  );
+
+  const weak = useMemo(() => {
+    if (!attempts || !questions || !kpNodes || kpNodes.length === 0) return [];
+    return rankWeakKps(computeKpStats({ attempts, questions, kpNodes }), kpNodes, 3);
+  }, [attempts, questions, kpNodes]);
 
   if (bank === undefined || questions === undefined) return <p className="muted">读取中…</p>;
   if (!bank)
@@ -55,10 +70,28 @@ export function BankPage() {
         <Link className="btn btn-primary" to={`/practice/${bank.id}`}>
           开始练习（随机 {ordered.length} 题）
         </Link>
+        <Link className="btn" to={`/review/${bank.id}`}>
+          今日复习
+        </Link>
+        <Link className="btn" to={`/bank/${bank.id}/progress`}>
+          诊断
+        </Link>
         <Link className="btn" to={`/bank/${bank.id}/mistakes`}>
           错题本
         </Link>
       </div>
+
+      {weak.length > 0 ? (
+        <div className="weak-strip">
+          <span className="muted">最该补</span>
+          {weak.map((item) => (
+            <Link key={item.kpId} className="chip" to={`/bank/${bank.id}/progress`}>
+              {item.node.name} · {formatRate(item.smoothedRate)}
+              <span className="chip-sub">{item.attempts} 次</span>
+            </Link>
+          ))}
+        </div>
+      ) : null}
 
       <ol className="question-list">
         {ordered.map((q, i) => (
