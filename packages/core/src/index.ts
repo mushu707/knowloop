@@ -27,8 +27,14 @@ export type { LintNotice } from './lint/question';
 export { judgeAnswer, isAnswerCorrect, JudgeError } from './grade/judge';
 export type { JudgeInput } from './grade/judge';
 
-export { deriveMistakes, isLuckyGuess } from './derive/mistake';
+export { deriveMistakes, isLuckyGuess, localDayKey } from './derive/mistake';
 export type { MistakeView } from './derive/mistake';
+
+export { computeKpStats, rankWeakKps, formatRate, MIN_SAMPLE } from './derive/stats';
+export type { KpStat, RankedKp } from './derive/stats';
+
+export { buildTodayQueue, DEFAULT_QUEUE_LIMITS } from './derive/queue';
+export type { QueueItem, QueueKind, QueueLimits, TodayQueue } from './derive/queue';
 
 export { nextReviewState, qualityOf } from './scheduler/sm2';
 export type { Quality, NextReviewInput } from './scheduler/sm2';
