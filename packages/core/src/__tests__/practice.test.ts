@@ -99,13 +99,17 @@ describe('判分', () => {
 });
 
 let seq = 0;
+const DAY_A = '2026-11-05T04:00:00.000Z';
+const DAY_B = '2026-11-06T04:00:00.000Z';
+const DAY_B_LATER = '2026-11-06T06:00:00.000Z';
+
 function attempt(
   questionId: string,
   correct: boolean,
-  opts: { selfConfidence?: 1 | 2 | 3; errorTags?: ErrorTag[] } = {},
+  opts: { at?: string; selfConfidence?: 1 | 2 | 3; errorTags?: ErrorTag[] } = {},
 ): Attempt {
   seq += 1;
-  const at = `2026-11-05T10:00:${String(seq).padStart(2, '0')}.000Z`;
+  const at = opts.at ?? `2026-11-05T10:00:${String(seq).padStart(2, '0')}.000Z`;
   return {
     id: `a_${seq}`,
     questionId,
@@ -132,23 +136,69 @@ describe('错题派生', () => {
     expect(view?.questionId).toBe('q1');
     expect(view?.wrongCount).toBe(1);
     expect(view?.resolved).toBe(false);
+    expect(view?.remainingToResolve).toBe(2);
     expect(view?.topErrorTags).toEqual(['concept_gap']);
   });
 
-  it('答对（有把握）后消错', () => {
-    const [view] = deriveMistakes([attempt('q1', false), attempt('q1', true, { selfConfidence: 3 })]);
-    expect(view?.resolved).toBe(true);
-    expect(view?.wrongCount).toBe(1);
+  it('答对一次还不够 —— S3 起要求「隔天再答对」', () => {
+    const [view] = deriveMistakes([
+      attempt('q1', false, { at: DAY_A }),
+      attempt('q1', true, { at: DAY_B, selfConfidence: 3 }),
+    ]);
+    expect(view?.resolved).toBe(false);
+    expect(view?.remainingToResolve).toBe(1);
   });
 
-  it('蒙对不算消错 —— 这是 D5 的核心用例', () => {
-    const [view] = deriveMistakes([attempt('q1', false), attempt('q1', true, { selfConfidence: 1 })]);
+  it('同一自然日连刷两次不算消错', () => {
+    const [view] = deriveMistakes([
+      attempt('q1', false, { at: DAY_A }),
+      attempt('q1', true, { at: DAY_B, selfConfidence: 3 }),
+      attempt('q1', true, { at: DAY_B_LATER, selfConfidence: 3 }),
+    ]);
     expect(view?.resolved).toBe(false);
+    expect(view?.remainingToResolve).toBe(1);
+  });
+
+  it('隔天再答对一次才消错', () => {
+    const [view] = deriveMistakes([
+      attempt('q1', false, { at: DAY_A }),
+      attempt('q1', true, { at: DAY_A, selfConfidence: 3 }),
+      attempt('q1', true, { at: DAY_B, selfConfidence: 3 }),
+    ]);
+    expect(view?.resolved).toBe(true);
+    expect(view?.remainingToResolve).toBe(0);
+  });
+
+  it('蒙对既不算连击，也会打断连击 —— D5 的核心用例', () => {
+    const [view] = deriveMistakes([
+      attempt('q1', false, { at: DAY_A }),
+      attempt('q1', true, { at: DAY_A, selfConfidence: 3 }),
+      attempt('q1', true, { at: DAY_B, selfConfidence: 1 }),
+      attempt('q1', true, { at: DAY_B_LATER, selfConfidence: 3 }),
+    ]);
+    expect(view?.resolved).toBe(false);
+    expect(view?.remainingToResolve).toBe(1);
   });
 
   it('答对但不自评，视为有把握', () => {
-    const [view] = deriveMistakes([attempt('q1', false), attempt('q1', true)]);
+    const [view] = deriveMistakes([
+      attempt('q1', false, { at: DAY_A }),
+      attempt('q1', true, { at: DAY_A }),
+      attempt('q1', true, { at: DAY_B }),
+    ]);
     expect(view?.resolved).toBe(true);
+  });
+
+  it('消错后再次答错，重新变成未消错', () => {
+    const [view] = deriveMistakes([
+      attempt('q1', false, { at: DAY_A }),
+      attempt('q1', true, { at: DAY_A }),
+      attempt('q1', true, { at: DAY_B }),
+      attempt('q1', false, { at: DAY_B_LATER }),
+    ]);
+    expect(view?.resolved).toBe(false);
+    expect(view?.wrongCount).toBe(2);
+    expect(view?.remainingToResolve).toBe(2);
   });
 
   it('错因按出现次数排序，最多三个', () => {
@@ -164,9 +214,10 @@ describe('错题派生', () => {
 
   it('未消错的排在已消错的前面', () => {
     const views = deriveMistakes([
-      attempt('q_done', false),
-      attempt('q_done', true, { selfConfidence: 3 }),
-      attempt('q_open', false),
+      attempt('q_done', false, { at: DAY_A }),
+      attempt('q_done', true, { at: DAY_A }),
+      attempt('q_done', true, { at: DAY_B }),
+      attempt('q_open', false, { at: DAY_B_LATER }),
     ]);
     expect(views.map((v) => v.questionId)).toEqual(['q_open', 'q_done']);
   });
